@@ -1,0 +1,9 @@
+# Nothing here is needed inside the build context — the image installs
+# meshcommander from npm, it does not copy repo files.
+.git
+.gitignore
+.dockerignore
+README.md
+docker-compose.yml
+*.md
+.DS_Store

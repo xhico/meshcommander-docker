@@ -1,0 +1,11 @@
+services:
+  meshcommander:
+    build: .
+    image: meshcommander:local
+    container_name: meshcommander
+    ports:
+      - "3000:3000"          # host:container — open http://localhost:3000
+    restart: unless-stopped
+    # Docker Desktop on macOS runs containers in a VM. Bridge networking (the
+    # default) can reach LAN AMT hosts on ports 16992/16993 outbound, which is
+    # what the relay needs. `network_mode: host` is NOT supported on Mac.
