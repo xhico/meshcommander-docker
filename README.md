@@ -7,6 +7,16 @@ This image installs the published npm **server** package `meshcommander`, which 
 the web UI and provides the WebSocket→AMT relay on port 3000. (It is *not* the NW.js
 desktop app from the GitHub source — that's a different packaging.)
 
+> [!WARNING]
+> **Do not run this on Docker Desktop for macOS if your AMT devices are on the LAN.**
+> Containers on Docker Desktop for Mac run inside a hidden Linux VM and **cannot reach
+> other physical devices on your Mac's LAN** — not with bridge networking, not with
+> `--network host`, regardless of the macOS firewall. The web UI loads fine, but the
+> AMT relay can never connect to your target (`ECONNREFUSED`), even though your Mac
+> itself reaches the AMT host. **Run it on a Linux Docker host that sits on the same
+> LAN as your AMT devices instead** (a mini PC, NAS, Raspberry Pi, or a bridged
+> LXC/VM). See [AMT device connectivity](#reaching-your-amt-devices) below.
+
 ## Build
 
 ```bash
@@ -37,9 +47,33 @@ binds `0.0.0.0`. If you override the command, keep `--any`.
 ## Reaching your AMT devices
 
 The container needs network access to your AMT hosts (LAN, TCP **16992** plaintext /
-**16993** TLS). On Docker Desktop for macOS, bridge networking (default) can reach LAN
-IPs outbound, so this normally works. `--network host` is unavailable on Mac, so keep
-the `-p 3000:3000` mapping for the UI.
+**16993** TLS, plus **16994/16995** for redirection). Because MeshCommander's server is
+the one that opens the TCP connection to the AMT box, **the container — not your
+browser — must be able to reach the AMT host.**
+
+### Linux Docker host (works)
+
+On a Linux Docker host that sits on the same LAN as your AMT devices, plain bridge
+networking NATs straight onto the physical LAN and reaches the AMT ports with no extra
+configuration. This is the supported setup.
+
+### Docker Desktop for macOS (does NOT work for LAN AMT hosts)
+
+Containers on Docker Desktop for Mac run inside a hidden `LinuxKit` VM. That VM only
+reaches your LAN through Docker's NAT proxy, which forwards internet traffic and the
+Mac's gateway but **not arbitrary peer devices on your subnet**. Verified behaviour
+reaching an AMT host at, e.g., `<amt-host>:16992`:
+
+| From | Result |
+| --- | --- |
+| Your Mac (native) | ✅ OPEN |
+| Container, bridge networking | ❌ `ECONNREFUSED` |
+| Container, `--network host` | ❌ `ECONNREFUSED` (host = the internal Docker VM, not your Mac) |
+| macOS firewall disabled | ❌ no change |
+
+`--network host` on macOS puts the container in the *VM's* network namespace, not your
+Mac's, so it does not help. There is no Docker Desktop setting that bridges a container
+onto your real LAN. **Move the container to a Linux host on the LAN.**
 
 ## Manage
 
