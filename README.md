@@ -17,25 +17,36 @@ desktop app from the GitHub source — that's a different packaging.)
 > LAN as your AMT devices instead** (a mini PC, NAS, Raspberry Pi, or a bridged
 > LXC/VM). See [AMT device connectivity](#reaching-your-amt-devices) below.
 
-## Build
+## Run (pull the pre-built image — recommended)
+
+The image is published to GHCR by CI, so you don't need to build anything:
 
 ```bash
-cd meshcommander-docker
+docker run -d --name meshcommander -p 3000:3000 \
+  --restart unless-stopped ghcr.io/xhico/meshcommander:latest
+```
+
+Or with compose (the default `docker-compose.yml` pulls from GHCR):
+
+```bash
+docker compose up -d
+```
+
+Then open `http://<host>:3000`.
+
+**Portainer (Git stack):** point a Repository stack at this repo with compose path
+`docker-compose.yml`. It only *pulls* the image — no in-app build, which avoids
+Portainer's BuildKit build-session error (`http2: frame too large`).
+
+## Build it yourself (optional)
+
+If you'd rather build from source instead of pulling:
+
+```bash
+docker compose -f docker-compose.build.yml up -d --build
+# or plain docker:
 docker build -t meshcommander:local .
-```
-
-## Run
-
-```bash
 docker run -d --name meshcommander -p 3000:3000 --restart unless-stopped meshcommander:local
-```
-
-Then open <http://localhost:3000>.
-
-Or with compose (build + run in one step):
-
-```bash
-docker compose up -d --build
 ```
 
 ## Why `--any` matters

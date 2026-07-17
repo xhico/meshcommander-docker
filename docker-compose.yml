@@ -1,11 +1,14 @@
+# Pull the pre-built image from GHCR — no build step, so it works on any Docker
+# host and avoids Portainer's in-app BuildKit build session (which can fail with
+# an http2/gRPC "frame too large" error). Published by .github/workflows/docker-publish.yml
+#
+# To BUILD locally instead of pulling:
+#   docker compose -f docker-compose.build.yml up -d --build
 services:
   meshcommander:
-    build: .
-    image: meshcommander:local
+    image: ghcr.io/xhico/meshcommander:latest
     container_name: meshcommander
     ports:
-      - "3000:3000"          # host:container — open http://localhost:3000
+      - "3000:3000"          # open http://<host>:3000
     restart: unless-stopped
-    # Docker Desktop on macOS runs containers in a VM. Bridge networking (the
-    # default) can reach LAN AMT hosts on ports 16992/16993 outbound, which is
-    # what the relay needs. `network_mode: host` is NOT supported on Mac.
+    pull_policy: always      # grab the latest published image on each (re)deploy

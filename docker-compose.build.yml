@@ -1,0 +1,13 @@
+# Build the image locally instead of pulling from GHCR.
+#   docker compose -f docker-compose.build.yml up -d --build
+#
+# Use this on a host where you want to build from source. For normal deploys
+# (including Portainer Git stacks) use docker-compose.yml, which pulls from GHCR.
+services:
+  meshcommander:
+    build: .
+    image: meshcommander:local
+    container_name: meshcommander
+    ports:
+      - "3000:3000"          # open http://<host>:3000
+    restart: unless-stopped
