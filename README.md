@@ -58,3 +58,16 @@ Map a different host port, e.g. serve on 8080:
 ```bash
 docker run -d --name meshcommander -p 8080:3000 meshcommander:local
 ```
+
+## Credits
+
+All credit for MeshCommander itself goes to **Ylian Saint-Hilaire** and Intel. This
+repo is only a thin Docker wrapper — the idea and all the actual software come from the
+original project:
+
+- Original source: <https://github.com/Ylianst/MeshCommander>
+- Project site: <https://www.meshcommander.com/>
+- npm package this image installs: <https://www.npmjs.com/package/meshcommander>
+
+This wrapper just packages the published `meshcommander` npm server into a container so
+it runs without Node.js on the host.
