@@ -8,14 +8,15 @@ the web UI and provides the WebSocket→AMT relay on port 3000. (It is *not* the
 desktop app from the GitHub source — that's a different packaging.)
 
 > [!WARNING]
-> **Do not run this on Docker Desktop for macOS if your AMT devices are on the LAN.**
-> Containers on Docker Desktop for Mac run inside a hidden Linux VM and **cannot reach
-> other physical devices on your Mac's LAN** — not with bridge networking, not with
-> `--network host`, regardless of the macOS firewall. The web UI loads fine, but the
-> AMT relay can never connect to your target (`ECONNREFUSED`), even though your Mac
-> itself reaches the AMT host. **Run it on a Linux Docker host that sits on the same
-> LAN as your AMT devices instead** (a mini PC, NAS, Raspberry Pi, or a bridged
-> LXC/VM). See [AMT device connectivity](#reaching-your-amt-devices) below.
+> **On macOS, this can't reach AMT devices on your LAN with default container
+> networking.** Mac container runtimes (Colima, Docker Desktop, Rancher Desktop) run
+> containers inside a Linux VM behind **user-mode NAT**, which reaches the internet and
+> your default gateway but **not other physical devices on your LAN** — with bridge
+> networking, with `--network host`, and regardless of the macOS firewall. The web UI
+> loads fine, but the AMT relay never connects to your target (`ECONNREFUSED`), even
+> though the Mac itself reaches the AMT host. **Run it on a Linux Docker host on the
+> same LAN as your AMT devices** (a mini PC, NAS, Raspberry Pi, or a bridged LXC/VM).
+> See [AMT device connectivity](#reaching-your-amt-devices) below.
 
 ## Run (pull the pre-built image — recommended)
 
@@ -68,23 +69,40 @@ On a Linux Docker host that sits on the same LAN as your AMT devices, plain brid
 networking NATs straight onto the physical LAN and reaches the AMT ports with no extra
 configuration. This is the supported setup.
 
-### Docker Desktop for macOS (does NOT work for LAN AMT hosts)
+### macOS with default container networking (does NOT work for LAN AMT hosts)
 
-Containers on Docker Desktop for Mac run inside a hidden `LinuxKit` VM. That VM only
-reaches your LAN through Docker's NAT proxy, which forwards internet traffic and the
-Mac's gateway but **not arbitrary peer devices on your subnet**. Verified behaviour
-reaching an AMT host at, e.g., `<amt-host>:16992`:
+On macOS, containers don't run natively — Colima, Docker Desktop and Rancher Desktop all
+run them inside a Linux VM. By default that VM uses **user-mode ("slirp") networking**,
+which forwards internet traffic and the Mac's default gateway but **not arbitrary peer
+devices on your subnet**. Verified behaviour reaching an AMT host at, e.g.,
+`<amt-host>:16992` (tested on **Colima**; Docker Desktop behaves the same way):
 
 | From | Result |
 | --- | --- |
-| Your Mac (native) | ✅ OPEN |
+| The Mac itself (native process) | ✅ OPEN |
 | Container, bridge networking | ❌ `ECONNREFUSED` |
-| Container, `--network host` | ❌ `ECONNREFUSED` (host = the internal Docker VM, not your Mac) |
+| Container, `--network host` | ❌ `ECONNREFUSED` |
 | macOS firewall disabled | ❌ no change |
 
-`--network host` on macOS puts the container in the *VM's* network namespace, not your
-Mac's, so it does not help. There is no Docker Desktop setting that bridges a container
-onto your real LAN. **Move the container to a Linux host on the LAN.**
+`--network host` does not help: on macOS it puts the container in the **VM's** network
+namespace, not your Mac's. You can see this from inside the container — it reports an
+address on the VM's private range (e.g. `192.168.x.x`) rather than your LAN address.
+
+**Recommended fix: run the container on a Linux Docker host on the same LAN.**
+
+#### Possible workaround on Colima (untested here)
+
+Unlike Docker Desktop, Colima can give its VM a real, reachable address on your network
+via `vmnet`:
+
+```bash
+colima start --network-address
+```
+
+With the VM holding a genuine LAN address, containers NATing through it may be able to
+reach LAN peers such as your AMT host. This needs elevated privileges for the `vmnet`
+helper, and is **not verified** by this project — the Linux-host route above is the
+supported path.
 
 ## Manage
 
