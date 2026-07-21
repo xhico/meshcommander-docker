@@ -14,8 +14,10 @@ desktop app from the GitHub source — that's a different packaging.)
 > your default gateway but **not other physical devices on your LAN** — with bridge
 > networking, with `--network host`, and regardless of the macOS firewall. The web UI
 > loads fine, but the AMT relay never connects to your target (`ECONNREFUSED`), even
-> though the Mac itself reaches the AMT host. **Run it on a Linux Docker host on the
-> same LAN as your AMT devices** (a mini PC, NAS, Raspberry Pi, or a bridged LXC/VM).
+> though the Mac itself reaches the AMT host.
+> **On Colima, fix it with `colima start --network-address`** (verified working).
+> On Docker Desktop there's no equivalent — run it on a Linux Docker host on the same
+> LAN instead (a mini PC, NAS, Raspberry Pi, or a bridged LXC/VM).
 > See [AMT device connectivity](#reaching-your-amt-devices) below.
 
 ## Run (pull the pre-built image — recommended)
@@ -90,19 +92,36 @@ address on the VM's private range (e.g. `192.168.x.x`) rather than your LAN addr
 
 **Recommended fix: run the container on a Linux Docker host on the same LAN.**
 
-#### Possible workaround on Colima (untested here)
+#### Working fix on Colima: `--network-address` ✅
 
-Unlike Docker Desktop, Colima can give its VM a real, reachable address on your network
-via `vmnet`:
+Unlike Docker Desktop, **Colima can reach LAN peers** — start it with a `vmnet`
+address:
 
 ```bash
+colima stop
 colima start --network-address
 ```
 
-With the VM holding a genuine LAN address, containers NATing through it may be able to
-reach LAN peers such as your AMT host. This needs elevated privileges for the `vmnet`
-helper, and is **not verified** by this project — the Linux-host route above is the
-supported path.
+This adds a second interface (`col0`) to the VM on the macOS `vmnet` network, and
+containers can then reach devices on your physical LAN. **Verified** — with the flag,
+the same container that previously got `ECONNREFUSED` reaches the AMT host:
+
+| Target from inside a container | Default networking | With `--network-address` |
+| --- | --- | --- |
+| `<amt-host>:16992` (AMT) | ❌ `ECONNREFUSED` | ✅ OPEN |
+| `<amt-host>:8006` (other LAN service) | ❌ `ECONNREFUSED` | ✅ OPEN |
+| internet | ✅ OPEN | ✅ OPEN |
+
+Confirm the VM picked up the address — `colima list` should show one in the `ADDRESS`
+column:
+
+```
+PROFILE   STATUS    ARCH      RUNTIME   ADDRESS
+default   Running   aarch64   docker    192.168.64.2
+```
+
+So on **Colima** you can run this container on your Mac. On **Docker Desktop**, there is
+no equivalent — use a Linux host on the LAN.
 
 ## Manage
 
