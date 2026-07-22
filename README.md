@@ -7,18 +7,13 @@ This image installs the published npm **server** package `meshcommander`, which 
 the web UI and provides the WebSocket→AMT relay on port 3000. (It is *not* the NW.js
 desktop app from the GitHub source — that's a different packaging.)
 
-> [!WARNING]
-> **On macOS, this can't reach AMT devices on your LAN with default container
-> networking.** Mac container runtimes (Colima, Docker Desktop, Rancher Desktop) run
-> containers inside a Linux VM behind **user-mode NAT**, which reaches the internet and
-> your default gateway but **not other physical devices on your LAN** — with bridge
-> networking, with `--network host`, and regardless of the macOS firewall. The web UI
-> loads fine, but the AMT relay never connects to your target (`ECONNREFUSED`), even
-> though the Mac itself reaches the AMT host.
-> **On Colima, fix it with `colima start --network-address`** (verified working).
-> On Docker Desktop there's no equivalent — run it on a Linux Docker host on the same
-> LAN instead (a mini PC, NAS, Raspberry Pi, or a bridged LXC/VM).
-> See [AMT device connectivity](#reaching-your-amt-devices) below.
+> [!IMPORTANT]
+> **The container — not your browser — is what connects to your AMT device.**
+> MeshCommander's server opens the TCP session to the AMT host, so the container must be
+> able to reach it on your LAN. Running it on a **Linux Docker host on the same LAN** is
+> the most reliable setup. On macOS it also works, but containers run inside a VM, which
+> adds a layer worth understanding if connections fail — see
+> [AMT device connectivity](#reaching-your-amt-devices) below.
 
 ## Run (pull the pre-built image — recommended)
 
@@ -65,63 +60,97 @@ The container needs network access to your AMT hosts (LAN, TCP **16992** plainte
 the one that opens the TCP connection to the AMT box, **the container — not your
 browser — must be able to reach the AMT host.**
 
-### Linux Docker host (works)
+### Linux Docker host on the LAN (most reliable)
 
-On a Linux Docker host that sits on the same LAN as your AMT devices, plain bridge
-networking NATs straight onto the physical LAN and reaches the AMT ports with no extra
-configuration. This is the supported setup.
+On a Linux Docker host that sits on the same LAN as your AMT devices, bridge networking
+NATs straight onto the physical LAN and reaches the AMT ports with no extra
+configuration. If you want one setup that just works, use this.
 
-### macOS with default container networking (does NOT work for LAN AMT hosts)
+### macOS (Colima / Docker Desktop)
 
-On macOS, containers don't run natively — Colima, Docker Desktop and Rancher Desktop all
-run them inside a Linux VM. By default that VM uses **user-mode ("slirp") networking**,
-which forwards internet traffic and the Mac's default gateway but **not arbitrary peer
-devices on your subnet**. Verified behaviour reaching an AMT host at, e.g.,
-`<amt-host>:16992` (tested on **Colima**; Docker Desktop behaves the same way):
+On macOS containers don't run natively — they run inside a Linux VM. In normal operation
+a container on **Colima** *can* reach LAN hosts, including AMT devices, with default
+networking. So running this on a Mac is viable.
 
-| From | Result |
-| --- | --- |
-| The Mac itself (native process) | ✅ OPEN |
-| Container, bridge networking | ❌ `ECONNREFUSED` |
-| Container, `--network host` | ❌ `ECONNREFUSED` |
-| macOS firewall disabled | ❌ no change |
+The VM does add a layer that can fail in ways a Linux host won't, so if the web UI loads
+but MeshCommander can't connect to your AMT box, work through the following.
 
-`--network host` does not help: on macOS it puts the container in the **VM's** network
-namespace, not your Mac's. You can see this from inside the container — it reports an
-address on the VM's private range (e.g. `192.168.x.x`) rather than your LAN address.
+#### Troubleshooting: container can't reach the AMT host
 
-**Recommended fix: run the container on a Linux Docker host on the same LAN.**
-
-#### Working fix on Colima: `--network-address` ✅
-
-Unlike Docker Desktop, **Colima can reach LAN peers** — start it with a `vmnet`
-address:
+**1. Check from the Mac itself first.** This separates a container problem from an AMT
+problem:
 
 ```bash
-colima stop
-colima start --network-address
+nc -zv <amt-host> 16992
 ```
 
-This adds a second interface (`col0`) to the VM on the macOS `vmnet` network, and
-containers can then reach devices on your physical LAN. **Verified** — with the flag,
-the same container that previously got `ECONNREFUSED` reaches the AMT host:
+If the Mac can't reach it either, the issue is AMT/the network, not Docker — AMT
+silently dropping off the network is common (see [AMT reachability](#amt-reachability)).
 
-| Target from inside a container | Default networking | With `--network-address` |
-| --- | --- | --- |
-| `<amt-host>:16992` (AMT) | ❌ `ECONNREFUSED` | ✅ OPEN |
-| `<amt-host>:8006` (other LAN service) | ❌ `ECONNREFUSED` | ✅ OPEN |
-| internet | ✅ OPEN | ✅ OPEN |
+**2. If the Mac reaches it but the container doesn't, restart the VM.** A long-running
+Colima VM can end up in a stale network state where a container gets `ECONNREFUSED` for
+a specific LAN host that the Mac reaches fine. Restarting clears it:
 
-Confirm the VM picked up the address — `colima list` should show one in the `ADDRESS`
-column:
-
-```
-PROFILE   STATUS    ARCH      RUNTIME   ADDRESS
-default   Running   aarch64   docker    192.168.64.2
+```bash
+colima stop && colima start
 ```
 
-So on **Colima** you can run this container on your Mac. On **Docker Desktop**, there is
-no equivalent — use a Linux host on the LAN.
+This was the actual cause of a lengthy debugging session behind this repo — a container
+could reach the default gateway and the internet, but not one particular LAN host, until
+Colima was restarted.
+
+**3. Optional — give the VM its own reachable address.** Not required for outbound LAN
+access, but available if you want the VM addressable on your network:
+
+```bash
+colima stop && colima start --network-address
+```
+
+`colima list` will then show an IP in the `ADDRESS` column. Note this setting persists in
+`~/.colima/<profile>/colima.yaml`; a plain `colima start` will *not* undo it, and neither
+does `--network-address=false` — use `colima start --edit` and set `address: false`.
+
+> Behaviour on **Docker Desktop** and **Rancher Desktop** was not tested for this
+> project; their VM networking differs from Colima's, so treat the above as
+> Colima-specific.
+
+## AMT reachability
+
+Before blaming Docker, confirm AMT is actually listening. Intel AMT runs on the
+Management Engine, independent of the host OS, and can silently stop answering while the
+machine itself stays perfectly reachable:
+
+```bash
+nc -zv <amt-host> 16992     # AMT plaintext
+nc -zv <amt-host> 22        # host OS, for comparison
+```
+
+If the OS ports answer but 16992/16993 are refused, AMT itself is down — no container
+change will help.
+
+**Test from another machine, never from the AMT host itself.** Traffic from a host to its
+own IP is routed over loopback (`ip route get <its-own-ip>` shows `dev lo`) and never
+reaches the ME on the wire, so it always looks closed.
+
+Things that actually fix a silent AMT, in order:
+
+1. **Energy-Efficient Ethernet (EEE) on the shared NIC.** If AMT shares the onboard NIC
+   with the OS, EEE's low-power idle can make the ME drop off the network intermittently
+   — it works after a cold boot, then goes quiet. Disabling it revived AMT immediately in
+   our case:
+   ```bash
+   ethtool --show-eee <nic>            # "EEE status: enabled - active" is the smoking gun
+   ethtool --set-eee <nic> eee off
+   ```
+   Persist it (Debian/Proxmox) so it survives reboots:
+   ```bash
+   printf '#!/bin/sh\n[ "$IFACE" = "<nic>" ] && /sbin/ethtool --set-eee <nic> eee off\nexit 0\n' \
+     > /etc/network/if-up.d/disable-eee && chmod +x /etc/network/if-up.d/disable-eee
+   ```
+2. **Full power drain.** A soft reboot does *not* reset the Management Engine. Shut down,
+   unplug for ~60 s, boot.
+3. **MEBx / BIOS.** Confirm AMT is provisioned with network access activated, and that
+   the ME keeps power in all states (disable deep sleep / ErP).
 
 ## Manage
 
